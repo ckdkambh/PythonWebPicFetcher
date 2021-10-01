@@ -31,14 +31,18 @@ class ImgDownloader():
         self.headers = {'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36'}
 
     async def get_current_img(self, name, url):
-        async with self.session.get(url, headers=self.headers, ssl=False) as response:
-            html = await response.text()
-            soup = BeautifulSoup(html, "html.parser")
-            imgs = soup.find_all("img")
-            ret = ["https:" + x.attrs["src"] for x in imgs if "title" in x.attrs]
-            self.get_current_img_count[name].increase()
-            print(self.get_current_img_count[name])
-            return ret
+        while True:
+            try:
+                async with self.session.get(url, headers=self.headers, ssl=False) as response:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    imgs = soup.find_all("img")
+                    ret = ["https:" + x.attrs["src"] for x in imgs if "title" in x.attrs]
+                    self.get_current_img_count[name].increase()
+                    print(self.get_current_img_count[name])
+                    return ret
+            except:
+                pass
 
     async def download_img(self, filePath, imgUrl):
         async with self.session.get(imgUrl, headers=self.headers, ssl=False) as response:
@@ -66,7 +70,6 @@ class ImgDownloader():
         return [{'name' : x.attrs['title'], "url" : 'https://www.chxk.com' + x.attrs['href']} for x in aList if "title" in x.attrs and x.attrs['href'].find('guonei') != -1]
 
     async def get_imgs_in_albums(self, urlMap):
-        start = datetime.now()
         async with aiohttp.ClientSession() as session:
             self.session = session
             self.img_count = OptCounter("ImgCount", len(urlMap))
@@ -86,7 +89,7 @@ class ImgDownloader():
                 for j in i['tasks']:
                     await j
                     imgList.extend(j.result())
-                currentPath = os.path.join(self.basePath, i['name'])
+                currentPath = os.path.join(self.basePath, i['name'].replace('|', '').replace(':', '').replace('?', ''))
                 try:
                     os.makedirs(currentPath)
                 except:
@@ -96,23 +99,27 @@ class ImgDownloader():
 
             for i in downloadTasks:
                 await i
-        print('cost %s' % (datetime.now() - start))
 
     def run(self):
+        start = datetime.now()
         baseUrl = "https://www.chxk.com/guonei/list_1957_%d.html"
         dbase = shelve.open("chxk_recorder")
         albumList = set()
         if 'album_list' in dbase:
             albumList = set(dbase['album_list'])
+        dbase.close()
+
         loop = asyncio.get_event_loop()
         for i in range(self.start, self.end + 1):
             print('start page %d' % i)
             currentList = [x for x in self.get_album_list(baseUrl % i) if x['url'] not in albumList]
             albumList.update([x['url'] for x in currentList])
             loop.run_until_complete(self.get_imgs_in_albums(currentList))
-        dbase['album_list'] = albumList
-        dbase.close()
+            dbase = shelve.open("chxk_recorder")
+            dbase['album_list'] = albumList
+            dbase.close()
+        print('cost %s' % (datetime.now() - start))
 
 if __name__ == "__main__":
-    obj = ImgDownloader(r'D:\down\imgs\chxk', 1, 1)
+    obj = ImgDownloader(r'D:\down\imgs\chxk', 1, 6)
     obj.run()
