@@ -42,6 +42,7 @@ class ImgDownloader():
                     print(self.get_current_img_count[name])
                     return ret
             except:
+                await asyncio.sleep(2)
                 pass
 
     async def download_img(self, filePath, imgUrl):
