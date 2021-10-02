@@ -134,3 +134,4 @@ dmypy.json
 *.dir
 
 log.txt*
+log/*

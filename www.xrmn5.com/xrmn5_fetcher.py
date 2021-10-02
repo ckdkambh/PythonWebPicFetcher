@@ -18,7 +18,7 @@ from logging.handlers import RotatingFileHandler
 log_fmt = '%(asctime)s\tFile \"%(filename)s\",line %(lineno)s\t%(levelname)s: %(message)s'
 formatter = logging.Formatter(log_fmt)
 #创建TimedRotatingFileHandler对象
-log_file_handler = TimedRotatingFileHandler(filename="log.txt", when="D", interval=2, backupCount=20, encoding="utf-8")
+log_file_handler = TimedRotatingFileHandler(filename="log/%s_log.txt" % (os.path.split(__file__)[-1].split(".")[0]), when="D", interval=2, backupCount=20, encoding="utf-8")
 log_file_handler.setFormatter(formatter)    
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger()
