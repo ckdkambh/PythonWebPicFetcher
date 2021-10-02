@@ -10,16 +10,29 @@ import asyncio
 from datetime import datetime
 from functools import wraps
 import random
+import os.path
+import logging
+from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
+
+log_fmt = '%(asctime)s\tFile \"%(filename)s\",line %(lineno)s\t%(levelname)s: %(message)s'
+formatter = logging.Formatter(log_fmt)
+#创建TimedRotatingFileHandler对象
+log_file_handler = TimedRotatingFileHandler(filename="log.txt", when="D", interval=2, backupCount=20, encoding="utf-8")
+log_file_handler.setFormatter(formatter)    
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger()
+log.addHandler(log_file_handler)
 
 def asyn_auto_retry(func):
     @wraps(func)
     async def inner(*args):
         while True:
             try:
-                print('%s start, %s' % (func.__name__, args[1:]))
+                log.info('%s start, %s' % (func.__name__, args[1:]))
                 return await func(*args)
             except:
-                # print('retry...')
+                log.info('retry...')
                 await asyncio.sleep(random.randint(1,20))
                 pass
     return inner
@@ -61,26 +74,26 @@ class ImgDownloader():
             imgs = soup.find_all("img")
             ret = ["https://pic.xrmn5.com" + x.attrs["src"] for x in imgs if "title" in x.attrs]
             self.get_current_img_count[name].increase()
-            print('get_current_img end, %s, %s, time %s' % (url, self.get_current_img_count[name], datetime.now() - start))
+            log.info('get_current_img end, %s, %s, time %s' % (url, self.get_current_img_count[name], datetime.now() - start))
             return ret
 
     @asyn_auto_retry
     async def download_img(self, filePath, baseUrl, imgUrl):
         start = datetime.now()
-        Timeout = aiohttp.ClientTimeout(total = self.timeout)
 
         fileName = filePath + '\\' + imgUrl.split('/')[6]
-        if fileName.exists():
+        if os.path.isfile(fileName):
             pass
         else:
+            Timeout = aiohttp.ClientTimeout(total = self.timeout)
             async with self.session.get(imgUrl, headers=self.headers, ssl=False, timeout=Timeout) as response:
                 content = await response.content.read()
                 with open(fileName, 'wb') as f:
                     f.write(content)
         self.download_img_count[filePath].increase()
-        print('download_img end, %s, %s, time %s' % (imgUrl, self.download_img_count[filePath], datetime.now() - start))
+        log.info('download_img end, %s, %s, time %s' % (imgUrl, self.download_img_count[filePath], datetime.now() - start))
         if self.download_img_count[filePath].isDone():
-            print('%s is done' % filePath)
+            log.info('%s is done' % filePath)
             self.persist(baseUrl)
 
     # 获取所有页码的链接
@@ -90,15 +103,13 @@ class ImgDownloader():
         Timeout = aiohttp.ClientTimeout(total = self.timeout)
         async with self.session.get(url, headers=self.headers, ssl=False, timeout=Timeout) as response:
             html = await response.text()
-            # codingTypr = response.encoding
-            # html = html.text.encode(codingTypr, errors='ignore').decode('utf-8', errors='ignore')
             soup = BeautifulSoup(html, "html.parser")
             imgLinks = [x for x in soup.find_all("a") if 'target' not in x.attrs and 'alt' not in x.attrs and x.string != None]
             maxIdx = max([int(x.string) for x in imgLinks if x.string.isdigit()])
             ret = [url]
             ret.extend([url.replace('.html', '_%d.html' % x) for x in range(1, maxIdx)])
             self.img_count.increase()
-            print('get_imgs end, %s, %s, time %s' % (url, self.img_count, datetime.now() - start))
+            log.info('get_imgs end, %s, %s, time %s' % (url, self.img_count, datetime.now() - start))
             return ret
         
     def get_album_list(self, url):
@@ -108,7 +119,7 @@ class ImgDownloader():
         text = get_url.text.encode(codingTypr, errors='ignore').decode('utf-8', errors='ignore')
         soup = BeautifulSoup(text, "html.parser")
         aList = soup.find_all("a")
-        print('get_album_list, time %s' % (datetime.now() - start))
+        log.info('get_album_list, time %s' % (datetime.now() - start))
         return [{'name' : x.attrs['title'], "url" : 'https://www.xrmn5.com/' + x.attrs['href']} for x in aList if "title" in x.attrs and 'target' not in x.attrs and len(x.contents) > 1]
 
     async def get_imgs_in_albums(self, urlMap):
@@ -153,14 +164,14 @@ class ImgDownloader():
 
         loop = asyncio.get_event_loop()
         for i in range(self.start, self.end + 1):
-            print('start page %d' % i)
+            log.info('start page %d' % i)
             if i == 1:
                 currentList = [x for x in self.get_album_list(baseUrl) if x['url'] not in self.albumList]
             else:
                 currentList = [x for x in self.get_album_list(baseUrl + 'index%d.html' % i) if x['url'] not in self.albumList]
             for j in range(0, len(currentList), self.parallelism):
                 loop.run_until_complete(self.get_imgs_in_albums(currentList[j : j + self.parallelism]))
-        print('cost %s' % (datetime.now() - start))
+        log.info('cost %s' % (datetime.now() - start))
 
     def persist(self, url):
         self.albumList.add(url)
@@ -171,5 +182,5 @@ class ImgDownloader():
 
 
 if __name__ == "__main__":
-    obj = ImgDownloader(r'D:\down\imgs\xrmn5', 1, 1)
+    obj = ImgDownloader(r'D:\down\imgs\xrmn5', 1, 2)
     obj.run()
