@@ -62,7 +62,7 @@ class ImgDownloader():
         self.headers = {'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36'}
         self.timeout = 60
         self.parallelism = 5
-        self.dbname = "xrmn5_recorder"
+        self.dbname = "lanvshen_recorder"
 
     @asyn_auto_retry
     async def get_current_img(self, name, url):
@@ -96,52 +96,67 @@ class ImgDownloader():
             log.info('%s is done' % filePath)
             self.persist(baseUrl)
 
-    # 获取所有页码的链接
+    # 获取所有图片的链接
     @asyn_auto_retry
     async def get_imgs(self, url):
-        start = datetime.now()
-        Timeout = aiohttp.ClientTimeout(total = self.timeout)
-        async with self.session.get(url, headers=self.headers, ssl=False, timeout=Timeout) as response:
-            html = await response.text()
-            soup = BeautifulSoup(html, "html.parser")
-            imgLinks = [x for x in soup.find_all("a") if 'target' not in x.attrs and 'alt' not in x.attrs and x.string != None]
-            maxIdx = max([int(x.string) for x in imgLinks if x.string.isdigit()])
-            ret = [url]
-            ret.extend([url.replace('.html', '_%d.html' % x) for x in range(1, maxIdx)])
-            self.img_count.increase()
-            log.info('get_imgs end, %s, %s, time %s' % (url, self.img_count, datetime.now() - start))
+        startTime = datetime.now()
+        Timeout = aiohttp.ClientTimeout(total = 3)
+        id = url.split('/')[-1]
+        imgBaseUrl = "https://tjg.gzhuibei.com/a/1/" + id
+        try:
+            async with self.session.get(imgBaseUrl + '/1.jpg', headers=self.headers, ssl=False, timeout=Timeout) as response:
+                await response.read()
+                status = response.status
+                if status != 200:
+                    log.error('%s not support guess' % (imgBaseUrl + '/1.jpg'))
+                    return []
+            start = 1
+            end = 256
+            while start < end - 1:
+                mid = (int)((start + end) / 2)
+                async with self.session.get(imgBaseUrl + '/' + str(mid) + '.jpg', headers=self.headers, ssl=False, timeout=Timeout) as response:
+                    await response.read()
+                    status = response.status
+                    if status != 200:
+                        end = mid
+                    else:
+                        start = mid
+            ret = []
+            for i in range(1, end):
+                ret.append(imgBaseUrl + '/' + str(i) + '.jpg')
             return ret
+        finally:
+            self.img_count.increase()
+            log.info('get_imgs end, %s, %s, time %s' % (url, self.img_count, datetime.now() - startTime))
         
     def get_album_list(self, url):
         start = datetime.now()
         get_url = requests.get(url, headers=self.headers)
-        codingTypr = get_url.encoding
-        text = get_url.text.encode(codingTypr, errors='ignore').decode('utf-8', errors='ignore')
-        soup = BeautifulSoup(text, "html.parser")
-        aList = soup.find_all("a")
+        # codingTypr = get_url.encoding
+        # text = get_url.text.encode(codingTypr, errors='ignore').decode('utf-8', errors='ignore')
+        soup = BeautifulSoup(get_url.text, "html.parser")
+        aList = [x for x in soup.find_all("a", target="_blank") if 'title' in x.attrs]
         log.info('get_album_list, time %s' % (datetime.now() - start))
-        return [{'name' : x.attrs['title'], "url" : 'https://www.xrmn5.com/' + x.attrs['href']} for x in aList if "title" in x.attrs and 'target' not in x.attrs and len(x.contents) > 1]
+        return [{'name' : x.attrs['title'], "url" : 'http://lanvshen.vr-seesee.com' + x.attrs['href']} for x in aList]
 
     async def get_imgs_in_albums(self, urlMap):
         async with aiohttp.ClientSession() as session:
             self.session = session
-            self.img_count = OptCounter("ImgCount", len(urlMap))
+            self.img_count = OptCounter("modelCount", len(urlMap))
             albumTasks = [{'name' : x['name'], 'baseUrl' : x['url'], 'task' : asyncio.create_task(self.get_imgs(x['url']))} for x in urlMap]
 
-            imgTasks = []
-            self.get_current_img_count = {}
-            for i in albumTasks:
-                await i['task']
-                self.get_current_img_count[i['name']] = OptCounter(i['name'], len(i['task'].result()))
-                imgTasks.append({ 'name' : i['name'], 'baseUrl' : i['baseUrl'], 'tasks' : [asyncio.create_task(self.get_current_img(i['name'], x)) for x in i['task'].result()]})
+            # imgTasks = []
+            # self.get_current_img_count = {}
+            # for i in albumTasks:
+            #     await i['task']
+            #     self.get_current_img_count[i['name']] = OptCounter(i['name'], len(i['task'].result()))
+            #     imgTasks.append({ 'name' : i['name'], 'baseUrl' : i['baseUrl'], 'tasks' : [asyncio.create_task(self.get_current_img(i['name'], x)) for x in i['task'].result()]})
 
             downloadTasks = []
             self.download_img_count = {}
-            for i in imgTasks:
-                imgList = []
-                for j in i['tasks']:
-                    await j
-                    imgList.extend(j.result())
+            for i in albumTasks:
+                await i['task']
+                imgList = i['task'].result()
                 currentPath = os.path.join(self.basePath, i['name'].replace('|', '').replace(':', '').replace('?', ''))
                 try:
                     os.makedirs(currentPath)
@@ -155,7 +170,7 @@ class ImgDownloader():
 
     def run(self):
         start = datetime.now()
-        baseUrl = "https://www.xrmn5.com/XiuRen/"
+        baseUrl = "http://lanvshen.vr-seesee.com/taotu_rank?p=%d"
         dbase = shelve.open(self.dbname)
         self.albumList = set()
         if 'album_list' in dbase:
@@ -165,10 +180,7 @@ class ImgDownloader():
         loop = asyncio.get_event_loop()
         for i in range(self.start, self.end + 1):
             log.info('start page %d' % i)
-            if i == 1:
-                currentList = [x for x in self.get_album_list(baseUrl) if x['url'] not in self.albumList]
-            else:
-                currentList = [x for x in self.get_album_list(baseUrl + 'index%d.html' % i) if x['url'] not in self.albumList]
+            currentList = [x for x in self.get_album_list(baseUrl % i) if x['url'] not in self.albumList]
             for j in range(0, len(currentList), self.parallelism):
                 loop.run_until_complete(self.get_imgs_in_albums(currentList[j : j + self.parallelism]))
         log.info('cost %s' % (datetime.now() - start))
@@ -182,5 +194,5 @@ class ImgDownloader():
 
 
 if __name__ == "__main__":
-    obj = ImgDownloader(r'D:\down\imgs\xrmn5', 6, 7)
+    obj = ImgDownloader(r'D:\down\imgs\lanvshen', 1, 1)
     obj.run()
