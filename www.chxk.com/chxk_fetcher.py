@@ -147,5 +147,5 @@ class ImgDownloader():
         dbase.close()
 
 if __name__ == "__main__":
-    obj = ImgDownloader(r'D:\down\imgs\chxk', 16, 20)
+    obj = ImgDownloader(r'D:\down\imgs\chxk', 30, 33)
     obj.run()

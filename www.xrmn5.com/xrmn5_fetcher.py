@@ -105,9 +105,11 @@ class ImgDownloader():
             html = await response.text()
             soup = BeautifulSoup(html, "html.parser")
             imgLinks = [x for x in soup.find_all("a") if 'target' not in x.attrs and 'alt' not in x.attrs and x.string != None]
-            maxIdx = max([int(x.string) for x in imgLinks if x.string.isdigit()])
             ret = [url]
-            ret.extend([url.replace('.html', '_%d.html' % x) for x in range(1, maxIdx)])
+            numList= [int(x.string) for x in imgLinks if x.string.isdigit()]
+            if len(numList) > 0:
+                maxIdx = max([int(x.string) for x in imgLinks if x.string.isdigit()])
+                ret.extend([url.replace('.html', '_%d.html' % x) for x in range(1, maxIdx)])
             self.img_count.increase()
             log.info('get_imgs end, %s, %s, time %s' % (url, self.img_count, datetime.now() - start))
             return ret
@@ -182,5 +184,5 @@ class ImgDownloader():
 
 
 if __name__ == "__main__":
-    obj = ImgDownloader(r'D:\down\imgs\xrmn5', 6, 7)
+    obj = ImgDownloader(r'D:\down\imgs\xrmn5', 12, 13)
     obj.run()

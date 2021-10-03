@@ -194,5 +194,5 @@ class ImgDownloader():
 
 
 if __name__ == "__main__":
-    obj = ImgDownloader(r'D:\down\imgs\lanvshen', 1, 1)
+    obj = ImgDownloader(r'D:\down\imgs\lanvshen', 10, 11)
     obj.run()
